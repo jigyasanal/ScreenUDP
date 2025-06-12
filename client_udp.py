@@ -7,15 +7,13 @@ SERVER_IP = '192.168.1.100'  # Change this to your server IP
 PORT = 33060
 CHUNK_SIZE = 60000
 
-def start_udp_client():
+def start_udp_client(fullscreen=True):
     pygame.init()
     info = pygame.display.Info()
     screen_width, screen_height = info.current_w, info.current_h
 
-    screen = pygame.display.set_mode(
-        (screen_width, screen_height),
-        pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
-    )
+    flags = pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE if fullscreen else 0
+    screen = pygame.display.set_mode((screen_width, screen_height), flags)
     pygame.display.set_caption("Screen Mirror")
     pygame.mouse.set_visible(False)
 
@@ -53,7 +51,7 @@ def start_udp_client():
                 frame = cv2.resize(frame, (screen_width, screen_height))  # Scale to fullscreen
 
                 # Display
-                frame_surface = pygame.image.frombuffer(frame.tobytes(), frame.shape[1::-1], "RGB")
+                frame_surface = pygame.image.frombuffer(frame.tobytes(), (screen_width, screen_height), "RGB")
                 screen.blit(frame_surface, (0, 0))
                 pygame.display.update()
 
