@@ -1,24 +1,24 @@
+# client_udp.py
+
 import socket
 import pygame
 import cv2
 import numpy as np
 import time
 
-SERVER_IP = '192.168.1.100'  # Set this to your server IP
+SERVER_IP = '192.168.1.100'  # Change to your server IP
 PORT = 33060
 CHUNK_SIZE = 60000
 
-# Global state
-screen = None
-screen_width = 0
-screen_height = 0
+running = False  # Global control flag
+def mirror_once():
+    global running
+    running = True
 
-def init_display():
-    global screen, screen_width, screen_height
-    if not pygame.get_init():
-        pygame.init()
+    pygame.init()
     info = pygame.display.Info()
     screen_width, screen_height = info.current_w, info.current_h
+
     screen = pygame.display.set_mode(
         (screen_width, screen_height),
         pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
@@ -26,24 +26,23 @@ def init_display():
     pygame.display.set_caption("Screen Mirror")
     pygame.mouse.set_visible(False)
 
-def mirror_once():
-    global screen, screen_width, screen_height
-
-    init_display()
-
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(2.0)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
+    sock.sendto(b'hello', (SERVER_IP, PORT))
 
     try:
-        sock.sendto(b'hello', (SERVER_IP, PORT))
-
-        while True:
+        while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    return False
+                    running = False
+                    break
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    return False  # Disconnect, don't exit app
+                    running = False
+                    break
+
+            if not running:
+                break
 
             try:
                 header, _ = sock.recvfrom(1024)
@@ -67,15 +66,16 @@ def mirror_once():
                 pygame.display.update()
 
             except socket.timeout:
-                time.sleep(0.5)
+                print("[CLIENT] Timeout.")
+                time.sleep(1)
                 continue
-
     finally:
         sock.close()
-        return True  # Allows restart
+        pygame.quit()
 
-def start_udp_client(dummy_arg=None):
-    while True:
-        reconnect = mirror_once()
-        if not reconnect:
-            break  # ESC pressed, stop client loop
+def start_udp_client():
+    mirror_once()
+
+def stop_udp_client():
+    global running
+    running = False
