@@ -3,20 +3,25 @@ import pygame
 import cv2
 import numpy as np
 
-SERVER_IP = '192.168.1.100'  # Change this
+SERVER_IP = '192.168.1.100'  # Change this to your server IP
 PORT = 33060
 CHUNK_SIZE = 60000
 
 def start_udp_client():
     pygame.init()
     info = pygame.display.Info()
-    screen = pygame.display.set_mode((info.current_w, info.current_h), pygame.FULLSCREEN)
-    pygame.mouse.set_visible(False)
+    screen_width, screen_height = info.current_w, info.current_h
 
+    screen = pygame.display.set_mode(
+        (screen_width, screen_height),
+        pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
+    )
     pygame.display.set_caption("Screen Mirror")
+    pygame.mouse.set_visible(False)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(2.0)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
     sock.sendto(b'hello', (SERVER_IP, PORT))
 
     try:
@@ -45,6 +50,7 @@ def start_udp_client():
                 np_img = np.frombuffer(buffer, dtype=np.uint8)
                 frame = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame = cv2.resize(frame, (screen_width, screen_height))  # Scale to fullscreen
 
                 # Display
                 frame_surface = pygame.image.frombuffer(frame.tobytes(), frame.shape[1::-1], "RGB")

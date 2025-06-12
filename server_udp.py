@@ -43,7 +43,7 @@ def start_udp_server():
                 chunk = frame[i*CHUNK_SIZE : (i+1)*CHUNK_SIZE]
                 sock.sendto(chunk, client_addr)
 
-            time.sleep(1/30)
+            time.sleep(1/25)
     except Exception as e:
         print("[SERVER ERROR]:", e)
     finally:
