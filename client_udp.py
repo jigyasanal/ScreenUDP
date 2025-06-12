@@ -4,15 +4,21 @@ import cv2
 import numpy as np
 import time
 
-SERVER_IP = '192.168.1.100'  # Change to your server IP
+SERVER_IP = '192.168.1.100'  # Set this to your server IP
 PORT = 33060
 CHUNK_SIZE = 60000
 
-def mirror_once():
-    pygame.init()
+# Global state
+screen = None
+screen_width = 0
+screen_height = 0
+
+def init_display():
+    global screen, screen_width, screen_height
+    if not pygame.get_init():
+        pygame.init()
     info = pygame.display.Info()
     screen_width, screen_height = info.current_w, info.current_h
-
     screen = pygame.display.set_mode(
         (screen_width, screen_height),
         pygame.FULLSCREEN | pygame.DOUBLEBUF | pygame.HWSURFACE
@@ -20,18 +26,24 @@ def mirror_once():
     pygame.display.set_caption("Screen Mirror")
     pygame.mouse.set_visible(False)
 
+def mirror_once():
+    global screen, screen_width, screen_height
+
+    init_display()
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(2.0)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
-    sock.sendto(b'hello', (SERVER_IP, PORT))
 
     try:
+        sock.sendto(b'hello', (SERVER_IP, PORT))
+
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    return
+                    return False
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    return  # This exits one session cleanly
+                    return False  # Disconnect, don't exit app
 
             try:
                 header, _ = sock.recvfrom(1024)
@@ -55,20 +67,15 @@ def mirror_once():
                 pygame.display.update()
 
             except socket.timeout:
-                print("[CLIENT] Timeout.")
-                time.sleep(1)
+                time.sleep(0.5)
                 continue
+
     finally:
         sock.close()
-        pygame.quit()
+        return True  # Allows restart
 
-def start_udp_client():
+def start_udp_client(dummy_arg=None):
     while True:
-        mirror_once()  # Keep restarting on every reconnect
-        # Ask for reconnect
-        response = input("Press Enter to reconnect, or type 'exit' to quit: ")
-        if response.strip().lower() == "exit":
-            break
-
-if __name__ == "__main__":
-    start_udp_client()
+        reconnect = mirror_once()
+        if not reconnect:
+            break  # ESC pressed, stop client loop
