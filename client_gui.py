@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import threading
-import client_udp_split  # Your client logic file
+import client_udp  # Your client logic file
 
 class ClientGUI:
     def __init__(self, root):
@@ -22,7 +22,7 @@ class ClientGUI:
     def connect_to_server(self):
         ip = self.ip_entry.get()
         self.status_label.config(text="Status: Connecting...")
-        threading.Thread(target=client_udp_split.start_udp_client,
+        threading.Thread(target=client_udp.start_udp_client,
                          args=(ip,),
                          daemon=True).start()
         self.status_label.config(text="Status: Connected")

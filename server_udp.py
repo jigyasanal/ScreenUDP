@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import mss
 
+
 CHUNK_SIZE = 60000  # UDP safe size
 SERVER_IP = '0.0.0.0'
 PORT = 33060

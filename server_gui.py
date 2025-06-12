@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import threading
-import server_udp_split  # Your server logic file
+import server_udp  # Your server logic file
 
 class ServerGUI:
     def __init__(self, root):
@@ -30,7 +30,7 @@ class ServerGUI:
         quality = int(self.quality.get())
         self.status_label.config(text="Status: Running...")
 
-        threading.Thread(target=server_udp_split.start_server,
+        threading.Thread(target=server_udp.start_server,
                          args=(resize, quality),
                          daemon=True).start()
 
