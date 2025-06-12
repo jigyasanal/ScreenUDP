@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 import client_udp  # Your client logic file
+from client_udp import start_udp_client, stop_udp_client
+
 
 class ClientGUI:
     def __init__(self, root):
@@ -26,6 +28,10 @@ class ClientGUI:
                          args=(ip,),
                          daemon=True).start()
         self.status_label.config(text="Status: Connected")
+    def start_stream():
+        threading.Thread(target=start_udp_client, args=(True,), daemon=True).start()
+    def stop_stream():
+        stop_udp_client()
 
 if __name__ == "__main__":
     root = tk.Tk()

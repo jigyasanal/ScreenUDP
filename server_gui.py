@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import threading
 import server_udp  # Your server logic file
+from server_udp import start_udp_server, stop_udp_server
 
 class ServerGUI:
     def __init__(self, root):
@@ -33,6 +34,11 @@ class ServerGUI:
         threading.Thread(target=server_udp.start_udp_server,
                          args=(resize, quality),
                          daemon=True).start()
+    def start_stream():
+        threading.Thread(target=start_udp_server, args=((800, 600), 35), daemon=True).start()
+    def stop_stream():
+        stop_udp_server()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
