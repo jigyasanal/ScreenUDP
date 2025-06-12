@@ -3,13 +3,16 @@ import pygame
 import cv2
 import numpy as np
 
-SERVER_IP = '192.168.63.53'  # Change this
-PORT = 5005
+SERVER_IP = '192.168.1.100'  # Change this
+PORT = 33060
 CHUNK_SIZE = 60000
 
 def start_udp_client():
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
+    info = pygame.display.Info()
+    screen = pygame.display.set_mode((info.current_w, info.current_h), pygame.FULLSCREEN)
+    pygame.mouse.set_visible(False)
+
     pygame.display.set_caption("Screen Mirror")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -18,6 +21,12 @@ def start_udp_client():
 
     try:
         while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    return
+
             try:
                 # Receive header
                 header, _ = sock.recvfrom(1024)

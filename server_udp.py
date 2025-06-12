@@ -6,18 +6,19 @@ import mss
 
 CHUNK_SIZE = 60000  # UDP safe size
 SERVER_IP = '0.0.0.0'
-PORT = 5005
+PORT = 33060
 
 def capture_frame(resize_to=(800, 600)):
     with mss.mss() as sct:
         monitor = sct.monitors[1]
         img = np.array(sct.grab(monitor))
         img = cv2.resize(img, resize_to)
-        ret, buffer = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), 40])
+        ret, buffer = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), 25, int(cv2.IMWRITE_JPEG_OPTIMIZE)1])
         return buffer.tobytes() if ret else None
 
 def start_udp_server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
     sock.bind((SERVER_IP, PORT))
     print("[SERVER] Listening for client...")
     
