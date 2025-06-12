@@ -15,7 +15,7 @@ def capture_screen(resize_to=(800, 600)):
         img.save(buffer, format='JPEG', quality=30, optimize=True)
         return buffer.getvalue()
 
-def start_udp_server(host='0.0.0.0', port=5005):
+def start_udp_server(host='0.0.0.0', port=33060):
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     udp_socket.bind((host, port))
