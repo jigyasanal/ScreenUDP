@@ -30,7 +30,7 @@ class ServerGUI:
         quality = int(self.quality.get())
         self.status_label.config(text="Status: Running...")
 
-        threading.Thread(target=server_udp.start_server,
+        threading.Thread(target=server_udp.start_udp_server,
                          args=(resize, quality),
                          daemon=True).start()
 
