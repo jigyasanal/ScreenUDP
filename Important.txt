@@ -1,0 +1,3 @@
+pyinstaller --onefile --windowed client_gui.py
+pyinstaller --onefile --windowed server_gui.py
+Run this command everytime changes are made and delete the other one 
