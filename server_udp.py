@@ -27,30 +27,68 @@ def start_udp_server(resize_to=(800, 600), jpeg_quality=35):
     sock.bind((SERVER_IP, PORT))
     print("[SERVER] Listening for client...")
 
-    try:
-        data, client_addr = sock.recvfrom(1024)
-        print(f"[SERVER] Client connected from {client_addr}")
+    current_client = None
+    last_heartbeat = time.time()
 
-        while server_running:
+    while server_running:
+        try:
+            # Set timeout for client detection
+            sock.settimeout(1.0)
+            
+            # Wait for new client or heartbeat
+            try:
+                data, client_addr = sock.recvfrom(1024)
+                if data == b'hello' or current_client is None:
+                    current_client = client_addr
+                    last_heartbeat = time.time()
+                    print(f"[SERVER] Client connected from {client_addr}")
+                elif data == b'heartbeat':
+                    last_heartbeat = time.time()
+            except socket.timeout:
+                # Check if client is still alive
+                if current_client and (time.time() - last_heartbeat > 3.0):
+                    print("[SERVER] Client timeout. Waiting for new connection...")
+                    current_client = None
+                continue
+
+            if not current_client:
+                continue
+
+            # Send frames only to the current client
             frame = capture_frame(resize_to, jpeg_quality)
             if not frame:
                 continue
 
             total_size = len(frame)
             num_chunks = (total_size // CHUNK_SIZE) + 1
-            sock.sendto(f"{total_size},{num_chunks}".encode(), client_addr)
+            
+            try:
+                # Send header
+                sock.sendto(f"{total_size},{num_chunks}".encode(), current_client)
+                
+                # Send chunks
+                for i in range(num_chunks):
+                    chunk = frame[i * CHUNK_SIZE : (i + 1) * CHUNK_SIZE]
+                    sock.sendto(chunk, current_client)
 
-            for i in range(num_chunks):
-                chunk = frame[i * CHUNK_SIZE : (i + 1) * CHUNK_SIZE]
-                sock.sendto(chunk, client_addr)
+                # Send heartbeat check
+                if time.time() - last_heartbeat > 1.0:
+                    sock.sendto(b'ping', current_client)
+
+            except socket.error as e:
+                print(f"[SERVER] Client connection error: {e}")
+                current_client = None
+                continue
 
             time.sleep(1 / 30)
 
-    except Exception as e:
-        print(f"[SERVER ERROR]: {e}")
-    finally:
-        sock.close()
-        print("[SERVER] Disconnected")
+        except Exception as e:
+            print(f"[SERVER ERROR]: {e}")
+            current_client = None
+            continue
+
+    sock.close()
+    print("[SERVER] Disconnected")
 
 def stop_udp_server():
     global server_running

@@ -80,8 +80,12 @@ def mirror_once():
                     break  # Exit inner loop to reconnect
 
         finally:
-            sock.close()
+            if 'sock' in locals(): 
+                sock.shutdown(socket.SHUT_RDWR)  # Force socket closure
+                sock.close()
             pygame.quit()
+            pygame.display.quit()  # Extra cleanup
+            time.sleep(1)  # Critical delay
 
 def start_udp_client():
     mirror_once()
