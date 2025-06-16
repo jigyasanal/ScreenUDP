@@ -11,6 +11,7 @@ PORT = 33060
 CHUNK_SIZE = 60000
 
 running = False  # Global control flag
+
 def mirror_once():
     global running
     running = True
@@ -45,8 +46,28 @@ def mirror_once():
                 break
 
             try:
-                header, _ = sock.recvfrom(1024)
-                total_size, num_chunks = map(int, header.decode().split(','))
+                # Try to receive header data
+                header, _ = sock.recvfrom(65535)
+                
+                # More robust header parsing
+                try:
+                    # First try UTF-8
+                    header_str = header.decode('utf-8')
+                except UnicodeDecodeError:
+                    # If that fails, try ASCII or other encodings
+                    try:
+                        header_str = header.decode('ascii')
+                    except UnicodeDecodeError:
+                        # If all else fails, try latin-1 which won't fail
+                        header_str = header.decode('latin-1')
+                
+                # Parse the header
+                try:
+                    total_size, num_chunks = map(int, header_str.split(','))
+                except ValueError:
+                    print(f"[CLIENT] Invalid header format: {header_str}")
+                    continue
+
                 buffer = b''
 
                 for _ in range(num_chunks):
@@ -54,10 +75,15 @@ def mirror_once():
                     buffer += chunk
 
                 if len(buffer) != total_size:
+                    print(f"[CLIENT] Size mismatch: expected {total_size}, got {len(buffer)}")
                     continue
 
                 np_img = np.frombuffer(buffer, dtype=np.uint8)
                 frame = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+                if frame is None:
+                    print("[CLIENT] Failed to decode image")
+                    continue
+                    
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (screen_width, screen_height))
 
@@ -67,6 +93,10 @@ def mirror_once():
 
             except socket.timeout:
                 print("[CLIENT] Timeout.")
+                time.sleep(1)
+                continue
+            except Exception as e:
+                print(f"[CLIENT] Error: {str(e)}")
                 time.sleep(1)
                 continue
     finally:
