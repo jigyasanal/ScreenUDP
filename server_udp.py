@@ -3,93 +3,157 @@ import time
 import cv2
 import numpy as np
 import mss
+import threading
+import zlib
 
-CHUNK_SIZE = 60000
-SERVER_IP = '0.0.0.0'
-PORT = 33060
+class UDPServer:
+    def __init__(self):
+        self.running = False
+        self.sock = None
+        self.client_addr = None
+        self.seq_num = 0
+        self.MAX_PACKET_SIZE = 1400  # Optimal for most networks
+        self.TARGET_FPS = 30
+        self.frame_stats = {'sent': 0, 'dropped': 0, 'bytes_sent': 0}
 
-server_running = False  # Global flag
-
-def capture_frame(resize_to=(800, 600), jpeg_quality=35):
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]
-        img = np.array(sct.grab(monitor))
-        img = cv2.resize(img, resize_to)
-        ret, buffer = cv2.imencode('.jpg', img, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
-        return buffer.tobytes() if ret else None
-
-def start_udp_server(resize_to=(800, 600), jpeg_quality=35):
-    global server_running
-    server_running = True
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024 * 1024)
-    sock.bind((SERVER_IP, PORT))
-    print("[SERVER] Listening for client...")
-
-    current_client = None
-    last_heartbeat = time.time()
-
-    while server_running:
+    def start_server(self, resize_to=(1280, 720), jpeg_quality=60, fps=30):
+        self.TARGET_FPS = fps
+        self.running = True
+        
+        # Socket setup with larger buffers
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
         try:
-            # Set timeout for client detection
-            sock.settimeout(1.0)
+            self.sock.bind(('0.0.0.0', 33060))
+        except socket.error as e:
+            print(f"[SERVER] Bind failed: {e}")
+            return False
+
+        print(f"[SERVER] Ready at 0.0.0.0:33060 | {resize_to[0]}x{resize_to[1]} | {fps}FPS | Q:{jpeg_quality}")
+
+        # Wait for client
+        try:
+            _, self.client_addr = self.sock.recvfrom(1024)
+            print(f"[SERVER] Client connected: {self.client_addr}")
             
-            # Wait for new client or heartbeat
-            try:
-                data, client_addr = sock.recvfrom(1024)
-                if data == b'hello' or current_client is None:
-                    current_client = client_addr
-                    last_heartbeat = time.time()
-                    print(f"[SERVER] Client connected from {client_addr}")
-                elif data == b'heartbeat':
-                    last_heartbeat = time.time()
-            except socket.timeout:
-                # Check if client is still alive
-                if current_client and (time.time() - last_heartbeat > 3.0):
-                    print("[SERVER] Client timeout. Waiting for new connection...")
-                    current_client = None
-                continue
+            # Send config
+            config = f"{resize_to[0]},{resize_to[1]},{fps},{jpeg_quality}"
+            self.sock.sendto(config.encode(), self.client_addr)
+        except socket.error as e:
+            print(f"[SERVER] Connection error: {e}")
+            return False
 
-            if not current_client:
-                continue
-
-            # Send frames only to the current client
-            frame = capture_frame(resize_to, jpeg_quality)
-            if not frame:
-                continue
-
-            total_size = len(frame)
-            num_chunks = (total_size // CHUNK_SIZE) + 1
+        # Main capture loop
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            frame_interval = 1.0 / fps
             
-            try:
-                # Send header
-                sock.sendto(f"{total_size},{num_chunks}".encode(), current_client)
+            while self.running:
+                frame_start = time.time()
                 
-                # Send chunks
-                for i in range(num_chunks):
-                    chunk = frame[i * CHUNK_SIZE : (i + 1) * CHUNK_SIZE]
-                    sock.sendto(chunk, current_client)
+                try:
+                    # 1. Capture
+                    img = np.array(sct.grab(monitor))
+                    
+                    # 2. Process
+                    img = cv2.resize(img, resize_to)
+                    ret, buffer = cv2.imencode('.jpg', img, [
+                        int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality
+                    ])
+                    
+                    if not ret:
+                        continue
 
-                # Send heartbeat check
-                if time.time() - last_heartbeat > 1.0:
-                    sock.sendto(b'ping', current_client)
+                    # 3. Compress
+                    compressed = zlib.compress(buffer.tobytes(), level=1)
+                    
+                    # 4. Send
+                    self._send_frame(compressed)
+                    self.frame_stats['sent'] += 1
+                    self.frame_stats['bytes_sent'] += len(compressed)
+                    
+                    # 5. Maintain FPS
+                    elapsed = time.time() - frame_start
+                    sleep_time = max(0, frame_interval - elapsed)
+                    
+                    if sleep_time < 0:
+                        self.frame_stats['dropped'] += 1
+                        if self.frame_stats['dropped'] % 10 == 0:
+                            print(f"[SERVER] Can't keep up! Dropped {self.frame_stats['dropped']} frames")
+                    else:
+                        time.sleep(sleep_time)
 
-            except socket.error as e:
-                print(f"[SERVER] Client connection error: {e}")
-                current_client = None
-                continue
+                except Exception as e:
+                    print(f"[SERVER] Frame error: {str(e)}")
+                    time.sleep(0.1)
 
-            time.sleep(1 / 30)
+        return True
 
-        except Exception as e:
-            print(f"[SERVER ERROR]: {e}")
-            current_client = None
-            continue
+    def _send_frame(self, frame_data):
+        try:
+            # 1. Create header
+            header = (
+                self.seq_num.to_bytes(4, 'big') +
+                len(frame_data).to_bytes(4, 'big') +
+                zlib.crc32(frame_data).to_bytes(4, 'big')
+            )
+            self.seq_num += 1
+            
+            # 2. Split into chunks
+            chunks = []
+            for i in range(0, len(frame_data), self.MAX_PACKET_SIZE):
+                chunk = frame_data[i:i + self.MAX_PACKET_SIZE]
+                chunks.append(chunk)
 
-    sock.close()
-    print("[SERVER] Disconnected")
+            # 3. Send metadata
+            metadata = header + len(chunks).to_bytes(2, 'big')
+            self.sock.sendto(metadata, self.client_addr)
+            
+            # 4. Send chunks
+            for chunk in chunks:
+                self.sock.sendto(chunk, self.client_addr)
+                time.sleep(0.0005)
+
+        except socket.error as e:
+            if e.errno == 10040:  # WSAEMSGSIZE
+                self.MAX_PACKET_SIZE = max(508, self.MAX_PACKET_SIZE - 100)
+                print(f"[SERVER] Reduced packet size to {self.MAX_PACKET_SIZE}")
+            else:
+                print(f"[SERVER] Send error: {e}")
+
+    def stop_server(self):
+        self.running = False
+        if self.sock:
+            try:
+                if self.client_addr:
+                    self.sock.sendto(b'TERMINATE', self.client_addr)
+            finally:
+                self.sock.close()
+                print(f"[SERVER] Stopped. Stats: {self.frame_stats}")
+
+# Wrapper functions for GUI compatibility
+_server_instance = None
+
+def start_udp_server(resize_to=(1280, 720), jpeg_quality=60, fps=25):
+    global _server_instance
+    _server_instance = UDPServer()
+    server_thread = threading.Thread(
+        target=_server_instance.start_server,
+        kwargs={
+            'resize_to': resize_to,
+            'jpeg_quality': jpeg_quality,
+            'fps': fps
+        },
+        daemon=True
+    )
+    server_thread.start()
+    return True
 
 def stop_udp_server():
-    global server_running
-    server_running = False
+    global _server_instance
+    if _server_instance:
+        _server_instance.stop_server()
+        _server_instance = None
+    return True
