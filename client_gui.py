@@ -26,13 +26,13 @@ class ClientGUI:
 
     def connect(self):
         self.status_label.config(text="Status: Connecting...")
-        client_udp.stop_flag = False  # Reset stop flag before reconnect
-        self.client_thread = threading.Thread(target=client_udp.start_udp_client, daemon=True)
+        server_ip = self.ip_entry.get()
+        self.client_thread = threading.Thread(target=client_udp.start_udp_client, kwargs={'server_ip': server_ip}, daemon=True)
         self.client_thread.start()
         self.status_label.config(text="Status: Connected")
 
     def disconnect(self):
-        client_udp.stop_flag = True
+        client_udp.stop_udp_client()
         self.status_label.config(text="Status: Disconnected")
 
 
