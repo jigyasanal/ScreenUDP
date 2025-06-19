@@ -27,6 +27,7 @@ class UDPClient:
         self.screen_height = 720
         self.font = None
         self.last_frames = []
+        self.receive_thread = None
 
     def start_client(self, server_ip='192.168.1.100'):
         self.running = True
@@ -73,7 +74,8 @@ class UDPClient:
         self.font = pygame.font.SysFont('Arial', 24)
         
         # Start network thread
-        threading.Thread(target=self._receive_loop, daemon=True).start()
+        self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
+        self.receive_thread.start()
         
         # Main display loop
         clock = pygame.time.Clock()
@@ -187,26 +189,36 @@ class UDPClient:
         self.running = False
         if self.sock:
             self.sock.close()
+        if self.receive_thread is not None:
+            self.receive_thread.join(timeout=2)
+            self.receive_thread = None
         pygame.quit()
         print(f"[CLIENT] Stopped. Final stats: {self.stats}")
 
 # Wrapper functions
 _client_instance = None
+_client_thread = None
 
 def start_udp_client(server_ip='192.168.1.100'):
-    global _client_instance
+    global _client_instance, _client_thread
+    if _client_instance is not None:
+        print("[CLIENT] Client already running. Please disconnect first.")
+        return False
     _client_instance = UDPClient()
-    client_thread = threading.Thread(
+    _client_thread = threading.Thread(
         target=_client_instance.start_client,
         kwargs={'server_ip': server_ip},
         daemon=True
     )
-    client_thread.start()
+    _client_thread.start()
     return True
 
 def stop_udp_client():
-    global _client_instance
+    global _client_instance, _client_thread
     if _client_instance:
         _client_instance.stop_client()
         _client_instance = None
+    if _client_thread:
+        _client_thread.join(timeout=2)
+        _client_thread = None
     return True
