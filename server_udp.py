@@ -19,12 +19,12 @@ class UDPServer:
     def start_server(self, resize_to=(1280, 720), jpeg_quality=60, fps=30):
         self.TARGET_FPS = fps
         self.running = True
-        
+
         # Socket setup with larger buffers
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16 * 1024 * 1024)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
+
         try:
             self.sock.bind(('0.0.0.0', 33060))
         except socket.error as e:
@@ -33,61 +33,65 @@ class UDPServer:
 
         print(f"[SERVER] Ready at 0.0.0.0:33060 | {resize_to[0]}x{resize_to[1]} | {fps}FPS | Q:{jpeg_quality}")
 
-        # Wait for client
-        try:
-            _, self.client_addr = self.sock.recvfrom(1024)
-            print(f"[SERVER] Client connected: {self.client_addr}")
-            
-            # Send config
-            config = f"{resize_to[0]},{resize_to[1]},{fps},{jpeg_quality}"
-            self.sock.sendto(config.encode(), self.client_addr)
-        except socket.error as e:
-            print(f"[SERVER] Connection error: {e}")
-            return False
-
-        # Main capture loop
         with mss.mss() as sct:
             monitor = sct.monitors[1]
             frame_interval = 1.0 / fps
-            
+
             while self.running:
-                frame_start = time.time()
-                
+                self.client_addr = None
+                self.seq_num = 0
+                print("[SERVER] Waiting for client connection...")
                 try:
-                    # 1. Capture
-                    img = np.array(sct.grab(monitor))
-                    
-                    # 2. Process
-                    img = cv2.resize(img, resize_to)
-                    ret, buffer = cv2.imencode('.jpg', img, [
-                        int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality
-                    ])
-                    
-                    if not ret:
-                        continue
+                    self.sock.settimeout(1.0)
+                    while self.running and self.client_addr is None:
+                        try:
+                            data, addr = self.sock.recvfrom(1024)
+                            if data == b'connect':
+                                self.client_addr = addr
+                        except socket.timeout:
+                            continue
+                    if not self.running:
+                        break
+                    print(f"[SERVER] Client connected: {self.client_addr}")
+                    # Send config
+                    config = f"{resize_to[0]},{resize_to[1]},{fps},{jpeg_quality}"
+                    self.sock.sendto(config.encode(), self.client_addr)
+                except socket.error as e:
+                    print(f"[SERVER] Connection error: {e}")
+                    continue
 
-                    # 3. Compress
-                    compressed = zlib.compress(buffer.tobytes(), level=1)
-                    
-                    # 4. Send
-                    self._send_frame(compressed)
-                    self.frame_stats['sent'] += 1
-                    self.frame_stats['bytes_sent'] += len(compressed)
-                    
-                    # 5. Maintain FPS
-                    elapsed = time.time() - frame_start
-                    sleep_time = max(0, frame_interval - elapsed)
-                    
-                    if sleep_time < 0:
-                        self.frame_stats['dropped'] += 1
-                        if self.frame_stats['dropped'] % 10 == 0:
-                            print(f"[SERVER] Can't keep up! Dropped {self.frame_stats['dropped']} frames")
-                    else:
-                        time.sleep(sleep_time)
-
-                except Exception as e:
-                    print(f"[SERVER] Frame error: {str(e)}")
-                    time.sleep(0.1)
+                # Main capture loop for this client
+                while self.running and self.client_addr is not None:
+                    frame_start = time.time()
+                    try:
+                        # 1. Capture
+                        img = np.array(sct.grab(monitor))
+                        # 2. Process
+                        img = cv2.resize(img, resize_to)
+                        ret, buffer = cv2.imencode('.jpg', img, [
+                            int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality
+                        ])
+                        if not ret:
+                            continue
+                        # 3. Compress
+                        compressed = zlib.compress(buffer.tobytes(), level=1)
+                        # 4. Send
+                        self._send_frame(compressed)
+                        self.frame_stats['sent'] += 1
+                        self.frame_stats['bytes_sent'] += len(compressed)
+                        # 5. Maintain FPS
+                        elapsed = time.time() - frame_start
+                        sleep_time = max(0, frame_interval - elapsed)
+                        if sleep_time < 0:
+                            self.frame_stats['dropped'] += 1
+                            if self.frame_stats['dropped'] % 10 == 0:
+                                print(f"[SERVER] Can't keep up! Dropped {self.frame_stats['dropped']} frames")
+                        else:
+                            time.sleep(sleep_time)
+                    except Exception as e:
+                        print(f"[SERVER] Frame error or client disconnected: {str(e)}")
+                        # On error, break to wait for new client
+                        break
 
         return True
 
