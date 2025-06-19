@@ -64,6 +64,15 @@ class UDPServer:
                 while self.running and self.client_addr is not None:
                     frame_start = time.time()
                     try:
+                        # Non-blocking check for new connect messages
+                        self.sock.settimeout(0.01)
+                        try:
+                            data, addr = self.sock.recvfrom(1024)
+                            if data == b'connect' and addr != self.client_addr:
+                                print(f"[SERVER] New client {addr} requested connection. Switching.")
+                                break  # Break to outer loop to accept new client
+                        except socket.timeout:
+                            pass
                         # 1. Capture
                         img = np.array(sct.grab(monitor))
                         # 2. Process
